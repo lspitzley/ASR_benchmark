@@ -8,6 +8,7 @@ import os
 import sys
 import asr_speechmatics
 import codecs
+import re
 
 def transcribe(speech_filepath, asr_system, settings, save_transcription=True):
     '''
@@ -168,6 +169,37 @@ def transcribe(speech_filepath, asr_system, settings, save_transcription=True):
                         transcription.append(hypothesis["transcript"])
             transcription = "\n".join(transcription)
             transcription = transcription.strip()
+
+        except sr.UnknownValueError:
+            print("IBM Speech to Text could not understand audio")
+        except sr.RequestError as e:
+            print("Could not request results from IBM Speech to Text service; {0}".format(e))
+            asr_could_not_be_reached = True
+            
+    # custom IBM to use already downloaded
+    elif asr_system == 'ibm_post':
+        IBM_USERNAME = settings.get('credentials','ibm_username')
+        IBM_PASSWORD = settings.get('credentials','ibm_password')
+        try:
+            
+            transcription_json = ''
+            with open('../data/kmi_2018_q4/4233875_ibm_post_original.json') as json_data:
+                transcription_json = json.load(json_data)
+            response = transcription_json
+                
+
+            if "results" not in response or len(response["results"]) < 1 or "alternatives" not in response["results"][0]:
+                raise sr.UnknownValueError()
+
+            transcription = []
+            for utterance in response["results"]:
+                if "alternatives" not in utterance: raise sr.UnknownValueError()
+                for hypothesis in utterance["alternatives"]:
+                    if "transcript" in hypothesis:
+                        transcription.append(hypothesis["transcript"])
+            transcription = "\n".join(transcription)
+            transcription = transcription.strip()
+            transcription = re.sub('%HESITATION', '', transcription)
 
         except sr.UnknownValueError:
             print("IBM Speech to Text could not understand audio")
