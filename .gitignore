@@ -5,6 +5,7 @@ data/*
 !data/example_dataset_en
 *__pycache__*
 .README.md.html
+src/all_predicted_transcriptions_ibm_post.txt
 data/example_dataset_en/*
 .spyproject/
 src/all_predicted_transcriptions_google.txt
