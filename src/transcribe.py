@@ -181,9 +181,9 @@ def transcribe(speech_filepath, asr_system, settings, save_transcription=True):
         IBM_USERNAME = settings.get('credentials','ibm_username')
         IBM_PASSWORD = settings.get('credentials','ibm_password')
         try:
-            
+            #print('speech filepath', speech_filepath, os.path.splitext(speech_filepath)[0] + '.json')
             transcription_json = ''
-            with open('../data/kmi_2018_q4/4233875_ibm_post_original.json') as json_data:
+            with open(os.path.splitext(speech_filepath)[0] + '.json') as json_data:
                 transcription_json = json.load(json_data)
             response = transcription_json
                 

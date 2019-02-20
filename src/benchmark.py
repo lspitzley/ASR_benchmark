@@ -131,7 +131,7 @@ def main():
                     all_gold_transcription_filepath.write('{0}\n'.format(gold_transcription))
                     #print('\npredicted_transcription\t: {0}'.format(predicted_transcription))
                     #print('gold_transcription\t: {0}'.format(gold_transcription))
-                    wer = metrics.wer(gold_transcription.split(' '), predicted_transcription.split(' '), True)
+                    wer = metrics.wer(gold_transcription.split(' '), predicted_transcription.split(' '), False)
                     #print('wer: {0}'.format(wer))
 
                     #if len(predicted_transcription) == 0: continue
