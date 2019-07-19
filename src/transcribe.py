@@ -10,6 +10,39 @@ import asr_speechmatics
 import codecs
 import re
 
+
+
+def google_post(speech_filepath):
+    try:
+        # for testing purposes, we're just using the default API key
+        # to use another API key, use `r.recognize_google(audio, key="GOOGLE_SPEECH_RECOGNITION_API_KEY")`
+        # instead of `r.recognize_google(audio)`
+        actual_result = ''
+        with open(os.path.splitext(speech_filepath)[0] + '.json') as json_data:
+            actual_result = json.load(json_data)
+
+        if not isinstance(actual_result, dict) or len(actual_result.get("alternative", [])) == 0: raise sr.UnknownValueError()
+
+        if "confidence" in actual_result["alternative"]:
+            # return alternative with highest confidence score
+            best_hypothesis = max(actual_result["alternative"], key=lambda alternative: alternative["confidence"])
+        else:
+            # when there is no confidence available, we arbitrarily choose the first hypothesis.
+            best_hypothesis = actual_result["alternative"][0]
+        if "transcript" not in best_hypothesis: raise sr.UnknownValueError()
+        transcription = best_hypothesis["transcript"]
+
+
+        print("Google Speech Recognition transcription is: " + transcription)
+        
+        return transcription
+    except sr.UnknownValueError:
+        print("Google Speech Recognition could not understand audio")
+    except sr.RequestError as e:
+        print("Could not request results from Google Speech Recognition service; {0}".format(e))
+        asr_could_not_be_reached = True
+
+
 def transcribe(speech_filepath, asr_system, settings, save_transcription=True):
     '''
     Returns:
@@ -73,6 +106,10 @@ def transcribe(speech_filepath, asr_system, settings, save_transcription=True):
             print("Could not request results from Google Speech Recognition service; {0}".format(e))
             asr_could_not_be_reached = True
 
+    elif asr_system == 'google_post':
+        transcription = google_post(speech_filepath)
+        
+        
     elif asr_system == 'googlecloud':
         # recognize speech using Google Cloud Speech
         GOOGLE_CLOUD_SPEECH_CREDENTIALS_filepath = settings.get('credentials','google_cloud_speech_credentials_filepath')
