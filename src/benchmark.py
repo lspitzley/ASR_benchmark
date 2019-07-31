@@ -1,6 +1,10 @@
 '''
 Use settings.ini to configure the benchmark.
 '''
+import logging
+FORMAT = "[%(filename)s:%(lineno)s %(funcName)s] %(levelname)s: %(message)s"
+logging.basicConfig(level=logging.DEBUG, format=FORMAT)
+# logging.getLogger(__name__)
 
 import configparser
 import glob
@@ -12,6 +16,12 @@ import collections
 import shutil
 import codecs
 
+
+
+
+
+
+
 def main():
 
     # Load setting file
@@ -21,7 +31,8 @@ def main():
 
     asr_systems = settings.get('general','asr_systems').split(',')
     data_folders = settings.get('general','data_folders').split(',')
-    supported_speech_file_types = sorted(['flac', 'mp3', 'ogg', 'wav'])
+    results_folder = settings.get('general','results_folder')
+    supported_speech_file_types = sorted(['flac', 'mp3', 'ogg', 'wav', 'json'])
 
     print('asr_systems: {0}'.format(asr_systems))
     print('data_folders: {0}'.format(data_folders))
@@ -61,7 +72,7 @@ def main():
                                  format(speech_file_type,data_folder))
 
             # Transcribe
-            print('\n### Call the ASR engines to compute predicted transcriptions')
+            logging.debug('\n### Call the ASR engines')
             for speech_file_number, speech_filepath in enumerate(speech_filepaths):
                 # Convert the speech file from FLAC/MP3/Ogg to WAV
                 if speech_file_type in ['flac', 'mp3', 'ogg']:
@@ -76,7 +87,8 @@ def main():
                 # Transcribe the speech file
                 all_transcription_skipped = True
                 for asr_system in asr_systems:
-                    transcription, transcription_skipped = transcribe.transcribe(speech_filepath,asr_system,settings,save_transcription=True)
+                    logging.debug('sending call to transcription')
+                    transcription, transcription_skipped = transcribe.transcribe(speech_filepath,asr_system,settings,results_folder,save_transcription=True)
                     all_transcription_skipped = all_transcription_skipped and transcription_skipped
 
                 # If the speech file was converted from FLAC/MP3/Ogg to WAV, remove the WAV file
@@ -89,16 +101,18 @@ def main():
         if settings.getboolean('general','evaluate_transcriptions'):
             # Evaluate transcriptions
             all_texts = {}
-            print('\n### Final evaluation of all the ASR engines based on their predicted jurisdictions')
+            logging.info(('\n#######\n'
+                         'Final evaluation of all the ASR engines based on their predicted jurisdictions\n'
+                         '########\n'))
 
             for asr_system in asr_systems:
                 all_texts[asr_system] = {}
-
+                """ # not sure what the purpose of this stuff is
                 all_predicted_transcription_filepath = 'all_predicted_transcriptions_' + asr_system + '.txt'
                 all_gold_transcription_filepath = 'all_gold_transcriptions.txt'
                 all_predicted_transcription_file = codecs.open(all_predicted_transcription_filepath, 'w', settings.get('general','predicted_transcription_encoding'))
                 all_gold_transcription_filepath = codecs.open(all_gold_transcription_filepath, 'w', settings.get('general','gold_transcription_encoding'))
-
+                """
                 number_of_tokens_in_gold = 0
                 number_of_empty_predicted_transcription_txt_files = 0
                 number_of_missing_predicted_transcription_txt_files = 0
@@ -108,8 +122,22 @@ def main():
                 for edit_type in edit_types:
                     number_of_edits[edit_type] = 0
 
+
+                # get new results folder:
+                # results_filepaths = sorted(glob.glob(os.path.join(results_folder, '*.{0}'.format(speech_file_type))))
+                
+                # store results for individual files
+                result_stats_file = os.path.join(data_folder, 'stats', asr_system + '_' 'results.csv')
+                logging.info('saving results to %s', result_stats_file)
+                with open(result_stats_file, 'w') as f:
+                    f.writelines('id,changes,corrects,substitutions,insertions,deletions,n_tokens_gold\n')
+                    
+
                 for speech_filepath in speech_filepaths:
-                    predicted_transcription_filepath_base = '.'.join(speech_filepath.split('.')[:-1]) + '_'  + asr_system
+                    filename = os.path.basename(speech_filepath)
+                    results_filepath = os.path.join(results_folder, filename)
+                    logging.debug('results filename %s', results_filepath)
+                    predicted_transcription_filepath_base = '.'.join(results_filepath.split('.')[:-1]) + '_'  + asr_system
                     predicted_transcription_txt_filepath = predicted_transcription_filepath_base  + '.txt'
 
                     if not os.path.isfile(predicted_transcription_txt_filepath):
@@ -121,14 +149,22 @@ def main():
                             #print('predicted_transcription_txt_filepath {0} is empty'.format(predicted_transcription_txt_filepath))
                             number_of_empty_predicted_transcription_txt_files += 1
 
-                    gold_transcription_filepath_base = '.'.join(speech_filepath.split('.')[:-1]) + '_'  + 'gold'
-                    gold_transcription_filepath_text = gold_transcription_filepath_base  + '.txt'
-                    gold_transcription = codecs.open(gold_transcription_filepath_text, 'r', settings.get('general','gold_transcription_encoding')).read()
+                    try:
+                        # gold_transcription_filepath_base = '.'.join(speech_filepath.split('.')[:-1]) + '_'  + 'gold'
+                        gold_transcription_filepath_base = '.'.join(speech_filepath.split('.')[:-1]) + '_'  + 'all'
+                        gold_transcription_filepath_text = gold_transcription_filepath_base  + '.txt'
+                        gold_transcription = codecs.open(gold_transcription_filepath_text, 'r', settings.get('general','gold_transcription_encoding')).read()
+                    except FileNotFoundError:
+                        logging.error('file not found: %s', results_filepath)
+                        continue
+                    
                     gold_transcription = metrics.normalize_text(gold_transcription, lower_case=True, remove_punctuation=True,write_numbers_in_letters=True)
                     predicted_transcription = metrics.normalize_text(predicted_transcription, lower_case=True, remove_punctuation=True,write_numbers_in_letters=True)
-
+                    logging.debug('found file %s', speech_filepath)
+                    """
                     all_predicted_transcription_file.write('{0}\n'.format(predicted_transcription))
                     all_gold_transcription_filepath.write('{0}\n'.format(gold_transcription))
+                    """
                     #print('\npredicted_transcription\t: {0}'.format(predicted_transcription))
                     #print('gold_transcription\t: {0}'.format(gold_transcription))
                     wer = metrics.wer(gold_transcription.split(' '), predicted_transcription.split(' '), False)
@@ -139,9 +175,16 @@ def main():
                     number_of_tokens_in_gold += len(gold_transcription.split(' '))
                     for edit_type in edit_types:
                         number_of_edits[edit_type] += wer[edit_type]
-
+                    
+                    
+                    new_row = filename + ',' + wer_stats(wer, number_of_tokens_in_gold)
+                    with open(result_stats_file, 'a') as f:
+                        f.write(new_row + '\n')
+                
+                """
                 all_predicted_transcription_file.close()
                 all_gold_transcription_filepath.close()
+                """
 
                 wer = number_of_edits['changes'] / number_of_tokens_in_gold
                 #print('\nGlobal WER based on the all predicted transcriptions:')
@@ -152,6 +195,15 @@ def main():
                 print('Number of missing predicted prescription files: {0}'.format(number_of_missing_predicted_transcription_txt_files))
                 print('Number of empty predicted prescription files: {0}'.format(number_of_empty_predicted_transcription_txt_files))
 
+
+def wer_stats(wer, n_tokens):
+    """ 
+    format WER stats for a csv file output.
+    """
+    logging.info('wer for doc %s, n_tokens %s', wer, n_tokens)
+    new_row = ",".join(map(str, wer.values())) + ',' + str(n_tokens)
+    logging.info('result row %s', new_row)
+    return new_row
 
 if __name__ == "__main__":
     main()

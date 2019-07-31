@@ -9,7 +9,7 @@ import sys
 import asr_speechmatics
 import codecs
 import re
-
+import logging
 
 
 def google_post(speech_filepath):
@@ -41,16 +41,71 @@ def google_post(speech_filepath):
     except sr.RequestError as e:
         print("Could not request results from Google Speech Recognition service; {0}".format(e))
         asr_could_not_be_reached = True
+        
+def amazon_post(speech_filepath):
+    try:
+        bot_name = settings.get('credentials','amazon_bot_name')
+        bot_alias = settings.get('credentials','amazon_bot_alias')
+        user_id = settings.get('credentials','amazon_user_id')
+        transcription,transcription_json = recognize_amazon(audio, bot_name, bot_alias, user_id,
+                 content_type="audio/l16; rate=16000; channels=1", access_key_id=settings.get('credentials','amazon_access_key_id'),
+                 secret_access_key=settings.get('credentials','amazon_secret_access_key'), region=settings.get('credentials','amazon_region'))
+    except sr.UnknownValueError:
+        print("Amazon not process the speech transcription request")
 
 
-def transcribe(speech_filepath, asr_system, settings, save_transcription=True):
+def ibm_post(speech_filepath):
+    logging.debug('in ibm_post')
+    try:
+        #print('speech filepath', speech_filepath, os.path.splitext(speech_filepath)[0] + '.json')
+        transcription_json = ''
+        logging.debug('attempting to open %s', os.path.splitext(speech_filepath)[0] + '.json')
+        with open(os.path.splitext(speech_filepath)[0] + '.json') as json_data:
+            # transcription_json = json.load(json_data)
+            transcription_json = json.load(json_data)
+        response = transcription_json
+            
+
+        if "results" not in response or len(response["results"]) < 1 or "alternatives" not in response["results"][0]:
+            raise sr.UnknownValueError()
+
+        transcription = []
+        for utterance in response["results"]:
+            if "alternatives" not in utterance:
+                logging.debug('contents of utterance %s', utterance)
+                continue
+                # raise sr.UnknownValueError()
+            for hypothesis in utterance["alternatives"]:
+                if "transcript" in hypothesis:
+                    transcription.append(hypothesis["transcript"])
+        transcription = "\n".join(transcription)
+        transcription = transcription.strip()
+        transcription = re.sub('%HESITATION', '', transcription)
+        return transcription
+    except sr.UnknownValueError:
+        logging.error("unknown value error in %s", speech_filepath)
+    except json.JSONDecodeError:
+        logging.error('json decode error from %s', speech_filepath)
+        
+def load_audio_file(speech_filepath):
+    """ import audio file """
+    r = sr.Recognizer()
+    with sr.AudioFile(speech_filepath) as source:
+        audio = r.record(source)  # read the entire audio file
+    return audio
+
+def transcribe(speech_filepath, asr_system, settings, results_folder, save_transcription=True):
     '''
     Returns:
      - transcription: string corresponding the transcription obtained from the ASR API or existing transcription file.
      - transcription_skipped: Boolean indicating if the speech file was sent to the ASR API.
     '''
+    
+    filename = os.path.basename(speech_filepath)
+    results_filepath = os.path.join(results_folder, filename)
+    logging.debug('results filename %s', results_filepath)
     transcription_json = ''
-    transcription_filepath_base = '.'.join(speech_filepath.split('.')[:-1]) + '_'  + asr_system
+    transcription_filepath_base = '.'.join(results_filepath.split('.')[:-1]) + '_'  + asr_system
     transcription_filepath_text = transcription_filepath_base  + '.txt'
     transcription_filepath_json = transcription_filepath_base  + '.json'
 
@@ -70,9 +125,10 @@ def transcribe(speech_filepath, asr_system, settings, save_transcription=True):
             return existing_transcription, transcription_skipped
 
     # use the audio file as the audio source
-    r = sr.Recognizer()
-    with sr.AudioFile(speech_filepath) as source:
-        audio = r.record(source)  # read the entire audio file
+    if speech_filepath.split('.')[:-1] == 'json':
+        logging.debug('json file %s', speech_filepath)
+    else:
+        logging.debug('line 123 not json: %s', speech_filepath.split('.')[:-1])
 
     transcription = ''
     asr_could_not_be_reached = False
@@ -189,6 +245,7 @@ def transcribe(speech_filepath, asr_system, settings, save_transcription=True):
 
     # recognize speech using IBM Speech to Text
     elif asr_system == 'ibm':
+        logging.debug('for some reason we are here')
         IBM_USERNAME = settings.get('credentials','ibm_username')
         IBM_PASSWORD = settings.get('credentials','ibm_password')
         try:
@@ -215,34 +272,8 @@ def transcribe(speech_filepath, asr_system, settings, save_transcription=True):
             
     # custom IBM to use already downloaded
     elif asr_system == 'ibm_post':
-        IBM_USERNAME = settings.get('credentials','ibm_username')
-        IBM_PASSWORD = settings.get('credentials','ibm_password')
-        try:
-            #print('speech filepath', speech_filepath, os.path.splitext(speech_filepath)[0] + '.json')
-            transcription_json = ''
-            with open(os.path.splitext(speech_filepath)[0] + '.json') as json_data:
-                transcription_json = json.load(json_data)
-            response = transcription_json
-                
-
-            if "results" not in response or len(response["results"]) < 1 or "alternatives" not in response["results"][0]:
-                raise sr.UnknownValueError()
-
-            transcription = []
-            for utterance in response["results"]:
-                if "alternatives" not in utterance: raise sr.UnknownValueError()
-                for hypothesis in utterance["alternatives"]:
-                    if "transcript" in hypothesis:
-                        transcription.append(hypothesis["transcript"])
-            transcription = "\n".join(transcription)
-            transcription = transcription.strip()
-            transcription = re.sub('%HESITATION', '', transcription)
-
-        except sr.UnknownValueError:
-            print("IBM Speech to Text could not understand audio")
-        except sr.RequestError as e:
-            print("Could not request results from IBM Speech to Text service; {0}".format(e))
-            asr_could_not_be_reached = True
+        logging.debug('initiating ibm_post')
+        transcription = ibm_post(speech_filepath)
 
     elif asr_system == 'speechmatics':
         # recognize speech using Speechmatics Speech Recognition
@@ -271,15 +302,18 @@ def transcribe(speech_filepath, asr_system, settings, save_transcription=True):
 
     asr_timestamp_ended = time.time()
     asr_time_elapsed = asr_timestamp_ended - asr_timestamp_started
-    print('asr_time_elapsed: {0:.3f} seconds'.format(asr_time_elapsed))
+    logging.info('asr_time_elapsed: %f.3 seconds', asr_time_elapsed)
     #time.sleep(2)   # Delay in seconds
     #if len(transcription) == 0 and asr_could_not_be_reached: return transcription
-
-    if save_transcription:
+    if save_transcription and transcription != '':
         #print('Transcription saved in {0} and {1}'.format(transcription_filepath_text,transcription_filepath_json))
-        codecs.open(transcription_filepath_text,'w', settings.get('general','predicted_transcription_encoding')).write(transcription)
-
-    print('transcription: {0}'.format(transcription))
+        try:
+            logging.debug('trying to save transcription %s', transcription[:100])
+            codecs.open(transcription_filepath_text,'w', settings.get('general','predicted_transcription_encoding')).write(transcription)
+        except TypeError:
+            print(transcription)
+            
+    # logging.debug('transcription: %s', transcription[:100])
     results = {}
     results['transcription'] = transcription
     results['transcription_json'] = transcription_json
