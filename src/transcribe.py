@@ -43,16 +43,11 @@ def google_post(speech_filepath):
         asr_could_not_be_reached = True
         
 def amazon_post(speech_filepath):
-    try:
-        bot_name = settings.get('credentials','amazon_bot_name')
-        bot_alias = settings.get('credentials','amazon_bot_alias')
-        user_id = settings.get('credentials','amazon_user_id')
-        transcription,transcription_json = recognize_amazon(audio, bot_name, bot_alias, user_id,
-                 content_type="audio/l16; rate=16000; channels=1", access_key_id=settings.get('credentials','amazon_access_key_id'),
-                 secret_access_key=settings.get('credentials','amazon_secret_access_key'), region=settings.get('credentials','amazon_region'))
-    except sr.UnknownValueError:
-        print("Amazon not process the speech transcription request")
-
+    with open(os.path.splitext(speech_filepath)[0] + '.json') as json_data:
+        # transcription_json = json.load(json_data)
+        response = json.load(json_data)
+    transcription = response["results"]['transcripts'][0]['transcript']
+    return transcription
 
 def ibm_post(speech_filepath):
     logging.debug('in ibm_post')
@@ -165,6 +160,8 @@ def transcribe(speech_filepath, asr_system, settings, results_folder, save_trans
     elif asr_system == 'google_post':
         transcription = google_post(speech_filepath)
         
+    elif asr_system == 'amazon_post':
+        transcription = amazon_post(speech_filepath)
         
     elif asr_system == 'googlecloud':
         # recognize speech using Google Cloud Speech
