@@ -10,3 +10,5 @@ data/example_dataset_en/*
 .spyproject/
 src/all_predicted_transcriptions_google.txt
 src/all_gold_transcriptions.txt
+
+\.DS_Store
