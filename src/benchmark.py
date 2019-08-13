@@ -13,7 +13,6 @@ import transcribe
 import metrics
 import time
 import threading
-import shutil
 import codecs
 
 
@@ -29,17 +28,17 @@ def main():
     settings_filepath = 'settings.ini'
     settings.read(settings_filepath)
 
-    asr_systems = settings.get('general','asr_systems').split(',')
-    data_folders = settings.get('general','data_folders').split(',')
-    results_folder = settings.get('general','results_folder')
+    asr_systems = settings.get('general', 'asr_systems').split(',')
+    data_folders = settings.get('general', 'data_folders').split(',')
+    results_folder = settings.get('general', 'results_folder')
     supported_speech_file_types = sorted(['flac', 'mp3', 'ogg', 'wav', 'json'])
 
-    print('asr_systems: {0}'.format(asr_systems))
-    print('data_folders: {0}'.format(data_folders))
+    logging.info('asr_systems: %s', asr_systems)
+    logging.info('data_folders: %s', data_folders)
 
     for data_folder in data_folders:
-        print('\nWorking on data folder "{0}"'.format(data_folder))
-        speech_file_type = settings.get('general','speech_file_type')
+        logging.info('Working on data folder "%s"', data_folder)
+        speech_file_type = settings.get('general', 'speech_file_type')
 
         # Automatically detect the speech file type.
         # Heuristic: the detected speech file type is the one that has the more speech files in data_folder
@@ -53,23 +52,25 @@ def main():
                     maximum_number_of_speech_files = len(potential_speech_filepaths)
                     detected_speech_file_type = supported_speech_file_type
             speech_file_type = detected_speech_file_type
-            print('Detected speech file type: {0}'.format(speech_file_type))
+            logging.debug('Detected speech file type: %s', speech_file_type)
             if detected_speech_file_type is None:
                 raise ValueError('You have set speech_file_type to be "auto" in {0}. We couldn\'t detect any speech file. Speech file extensions should be {1}.'
                                  .format(settings_filepath, supported_speech_file_types))
 
         if speech_file_type not in supported_speech_file_types:
-            raise ValueError('You have set speech_file_type to be "{0}" in {1}. This is invalid. speech_file_type should be flac, ogg, mp3, or wav.'.
-                             format(speech_file_type, settings_filepath))
+            raise ValueError('You have set speech_file_type to be "%s" in %s.'
+                             'This is invalid. speech_file_type should be'
+                             'flac, ogg, mp3, or wav.',
+                             speech_file_type, settings_filepath)
 
         speech_filepaths = sorted(glob.glob(os.path.join(data_folder, '*.{0}'.format(speech_file_type))))
 
-        if settings.getboolean('general','transcribe'):
+        if settings.getboolean('general', 'transcribe'):
 
             # Make sure there are files to transcribe
             if len(speech_filepaths) <= 0:
-                raise ValueError('There is no file with the extension "{0}"  in the folder "{1}"'.
-                                 format(speech_file_type,data_folder))
+                raise ValueError('There is no file with the extension "%s"  in the folder "%s"',
+                                 speech_file_type, data_folder)
 
             # Transcribe
             logging.debug('\n### Call the ASR engines')
@@ -77,7 +78,7 @@ def main():
                 # Convert the speech file from FLAC/MP3/Ogg to WAV
                 if speech_file_type in ['flac', 'mp3', 'ogg']:
                     from pydub import AudioSegment
-                    print('speech_filepath: {0}'.format(speech_filepath))
+                    logging.debug('speech_filepath: %s', speech_filepath)
                     sound = AudioSegment.from_file(speech_filepath, format=speech_file_type)
                     new_speech_filepath = speech_filepath[:-len(speech_file_type)-1]+'.wav'
                     sound.export(new_speech_filepath, format="wav")
@@ -86,7 +87,7 @@ def main():
                 # Transcribe the speech file
                 all_transcription_skipped = True
                 for asr_system in asr_systems:
-                    logging.debug('sending call to transcription')
+                    # logging.debug('sending call to transcription')
                     transcription, transcription_skipped = transcribe.transcribe(speech_filepath,asr_system,settings,results_folder,save_transcription=True)
                     all_transcription_skipped = all_transcription_skipped and transcription_skipped
 
@@ -101,22 +102,12 @@ def main():
             # Evaluate transcriptions
             all_texts = {}
             logging.info(('\n#######\n'
-                         'Final evaluation of all the ASR engines based on their predicted jurisdictions\n'
-                         '########\n'))
+                          'Final evaluation of all the ASR engines based on their predicted jurisdictions\n'
+                          '########\n'))
 
             for asr_system in asr_systems:
                 all_texts[asr_system] = {}
-                '''
-                # not sure what the purpose of this stuff is
-                all_predicted_transcription_filepath = 'all_predicted_transcriptions_' + asr_system + '.txt'
-                all_gold_transcription_filepath = 'all_gold_transcriptions.txt'
-                all_predicted_transcription_file = codecs.open(all_predicted_transcription_filepath, 'w', settings.get('general','predicted_transcription_encoding'))
-                all_gold_transcription_filepath = codecs.open(all_gold_transcription_filepath, 'w', settings.get('general','gold_transcription_encoding'))
-                '''
-                
-                number_of_tokens_in_gold = 0
-                number_of_empty_predicted_transcription_txt_files = 0
-                number_of_missing_predicted_transcription_txt_files = 0
+
                 edit_types = ['corrects', 'deletions', 'insertions', 'substitutions', 'changes']
                 number_of_edits = {}
 
@@ -183,19 +174,17 @@ def get_transcript_wer(speech_filepath, results_folder, asr_system, edit_types, 
     gold_transcription = metrics.normalize_text(gold_transcription, lower_case=True, remove_punctuation=True,write_numbers_in_letters=True)
     predicted_transcription = metrics.normalize_text(predicted_transcription, lower_case=True, remove_punctuation=True,write_numbers_in_letters=True)
     logging.debug('found file %s', speech_filepath)
-    """
-    all_predicted_transcription_file.write('{0}\n'.format(predicted_transcription))
-    all_gold_transcription_filepath.write('{0}\n'.format(gold_transcription))
-    """
+
     #print('\npredicted_transcription\t: {0}'.format(predicted_transcription))
     #print('gold_transcription\t: {0}'.format(gold_transcription))
-    #TODO, handle the split just once, happens again later
-    wer = metrics.wer(gold_transcription.split(' '), predicted_transcription.split(' '), False)
+
+    gold_transcript_tokens = gold_transcription.split(' ')
+    wer = metrics.wer(gold_transcript_tokens, predicted_transcription.split(' '), False)
     #print('wer: {0}'.format(wer))
 
     #if len(predicted_transcription) == 0: continue
 
-    number_of_tokens_in_gold = len(gold_transcription.split(' '))
+    number_of_tokens_in_gold = len(gold_transcript_tokens)
     for edit_type in edit_types:
         number_of_edits[edit_type] += wer[edit_type]
 
@@ -220,6 +209,7 @@ def wer_stats(wer, n_tokens):
     return new_row
 
 if __name__ == "__main__":
+    logging.info('program started')
     main()
     #cProfile.run('main()') # if you want to do some profiling
     logging.info('done')
