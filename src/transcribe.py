@@ -20,26 +20,26 @@ def google_post(speech_filepath):
         actual_result = ''
         with open(os.path.splitext(speech_filepath)[0] + '.json') as json_data:
             actual_result = json.load(json_data)
+        actual_result = actual_result['results']
+        logging.debug('actual_result len: %s', len(actual_result))
+        
+        transcription = ''
+        for part in actual_result:
+            #print(part)
+            transcription += ' ' + part['alternatives'][0]['transcript']
+        #if not isinstance(actual_result, dict) or len(actual_result.get("alternatives", [])) == 0: raise sr.UnknownValueError()
+        logging.debug('transcription: %s', transcription[:100])
+        #if "transcript" not in best_hypothesis: raise sr.UnknownValueError()
+        #transcription = best_hypothesis["transcript"]
 
-        if not isinstance(actual_result, dict) or len(actual_result.get("alternative", [])) == 0: raise sr.UnknownValueError()
 
-        if "confidence" in actual_result["alternative"]:
-            # return alternative with highest confidence score
-            best_hypothesis = max(actual_result["alternative"], key=lambda alternative: alternative["confidence"])
-        else:
-            # when there is no confidence available, we arbitrarily choose the first hypothesis.
-            best_hypothesis = actual_result["alternative"][0]
-        if "transcript" not in best_hypothesis: raise sr.UnknownValueError()
-        transcription = best_hypothesis["transcript"]
-
-
-        print("Google Speech Recognition transcription is: " + transcription)
+        #logging.info("Google Speech Recognition transcription is: " + transcription)
         
         return transcription
     except sr.UnknownValueError:
-        print("Google Speech Recognition could not understand audio")
+        logging.error("Google Speech Recognition could not understand audio")
     except sr.RequestError as e:
-        print("Could not request results from Google Speech Recognition service; {0}".format(e))
+        logging.error("Could not request results from Google Speech Recognition service; {0}".format(e))
         asr_could_not_be_reached = True
         
 def amazon_post(speech_filepath):
@@ -120,10 +120,10 @@ def transcribe(speech_filepath, asr_system, settings, results_folder, save_trans
             return existing_transcription, transcription_skipped
 
     # use the audio file as the audio source
-    if speech_filepath.split('.')[:-1] == 'json':
+    if speech_filepath.split('.')[-1:][0] == 'json':
         logging.debug('json file %s', speech_filepath)
     else:
-        logging.debug('line 123 not json: %s', speech_filepath.split('.')[:-1])
+        logging.debug('line 123 not json: %s', speech_filepath.split('.')[-1:])
 
     transcription = ''
     asr_could_not_be_reached = False
