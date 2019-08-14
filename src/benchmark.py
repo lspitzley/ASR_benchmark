@@ -12,7 +12,7 @@ import os
 import transcribe
 import metrics
 import time
-import threading
+import multiprocessing
 import codecs
 
 
@@ -125,27 +125,52 @@ def main():
                     f.writelines('id,changes,corrects,substitutions,insertions,deletions,n_tokens_gold\n')
 
                 start_time = time.time()
-
-                threads = list()
+                pool = multiprocessing.Pool()
+                args = []
+                # crappy way of passing multiple arguments
+                # since pool only accepts a single iterable.
+                # I don't have internet right now so this will have to do
                 for speech_filepath in speech_filepaths:
-                    logging.info("Main    : create and start thread %s.", speech_filepath)
-                    x = threading.Thread(target=get_transcript_wer, args=(speech_filepath, results_folder, asr_system, edit_types, result_stats_file, number_of_edits, settings,))
-                    threads.append(x)
-                    x.start()
-
-                for speech_filepath, thread in enumerate(threads):
-                    logging.info("Main    : before joining thread %s.", speech_filepath)
-                    thread.join()
-                    logging.info("Main    : thread %s done", speech_filepath)
-
-
+                    tmp_dict = {}
+                    tmp_dict['speech_filepath'] = speech_filepath
+                    tmp_dict['results_folder'] = results_folder
+                    tmp_dict['asr_system'] = asr_system
+                    tmp_dict['settings'] = settings
+                    tmp_dict['edit_types'] = edit_types
+                    tmp_dict['number_of_edits'] = number_of_edits
+                    args.append(tmp_dict)
+                
+                
+                logging.info("Starting processes.")
+                results = pool.map(get_transcript_wer, args)
+                print(results)
+                
+                pool.terminate()
+                pool.join()
+                with open(result_stats_file, 'a') as f:
+                    for row in results:
+                        try:
+                            f.write(row + '\n')
+                        except TypeError:
+                            logging.warning('row %s not in results', row)
                 logging.info('processed wer in %s seconds', time.time() - start_time)
 
-def get_transcript_wer(speech_filepath, results_folder, asr_system, edit_types, result_stats_file, number_of_edits, settings):
+
+def get_transcript_wer(args):
     """
     attempt to functionalize the accuracy computation
     to allow parallel computing.
+    
+    currently uses a brute force approach to arguments
+    change this later. 
     """
+    speech_filepath = args['speech_filepath']
+    results_folder = args['results_folder']
+    asr_system = args['asr_system']
+    settings = args['settings']
+    edit_types = args['edit_types']
+    number_of_edits = args['number_of_edits']
+    
     filename = os.path.basename(speech_filepath)
     results_filepath = os.path.join(results_folder, filename)
     logging.debug('results filename %s', results_filepath)
@@ -190,10 +215,9 @@ def get_transcript_wer(speech_filepath, results_folder, asr_system, edit_types, 
 
 
     new_row = filename + ',' + wer_stats(wer, number_of_tokens_in_gold)
-    with open(result_stats_file, 'a') as f:
-        f.write(new_row + '\n')
+    logging.debug('new row for %s is %s', speech_filepath, new_row)
 
-    # return number_of_edits
+    return new_row
 
 def load_predicted_transcription(predicted_transcription_txt_filepath, settings):
     predicted_transcription = codecs.open(predicted_transcription_txt_filepath, 'r', settings.get('general','predicted_transcription_encoding')).read().strip()
@@ -205,11 +229,13 @@ def wer_stats(wer, n_tokens):
     """
     logging.info('wer for doc %s, n_tokens %s', wer, n_tokens)
     new_row = ",".join(map(str, wer.values())) + ',' + str(n_tokens)
-    logging.info('result row %s', new_row)
+    #logging.info('result row %s', new_row)
     return new_row
 
 if __name__ == "__main__":
+    start = time.time()
     logging.info('program started')
     main()
     #cProfile.run('main()') # if you want to do some profiling
-    logging.info('done')
+    logging.info('done. took %.6f seconds', time.time() - start)
+    print('done. time in seconds: ', time.time() - start)
