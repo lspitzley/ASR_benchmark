@@ -1,6 +1,6 @@
 import numpy
 import string
-
+import logging
 
 def normalize_text(text, lower_case=False, remove_punctuation=False, write_numbers_in_letters=True):
     '''
@@ -141,7 +141,6 @@ def wer(ref, hyp ,debug=False):
     numIns = 0
     numCor = 0
     if debug:
-        print("OP\tREF\tHYP")
         lines = []
     while i > 0 or j > 0:
         if backtrace[i][j] == OP_OK:
@@ -166,18 +165,13 @@ def wer(ref, hyp ,debug=False):
             i-=1
             if debug:
                 lines.append("DEL\t" + r[i]+"\t"+"****")
-    if debug:
-        lines = reversed(lines)
-        for line in lines:
-            print(line)
-        #print("#cor " + str(numCor))
-        #print("#sub " + str(numSub))
-        #print("#del " + str(numDel))
-        #print("#ins " + str(numIns))
+
+    lines.append("OP\tREF\tHYP")
     #return (numSub + numDel + numIns) / (float) (len(r))
     wer_result = round( (numSub + numDel + numIns) / (float) (len(r)), 3)
     #return {'WER':wer_result, 'Cor':numCor, 'Sub':numSub, 'Ins':numIns, 'Del':numDel}
-    return {'changes': numSub + numDel + numIns, 'corrects':numCor, 'substitutions':numSub, 'insertions':numIns, 'deletions':numDel}
+    return {'changes': numSub + numDel + numIns, 'corrects':numCor, 
+            'substitutions':numSub, 'insertions':numIns, 'deletions':numDel}, lines
 
 
 if __name__ == "__main__":

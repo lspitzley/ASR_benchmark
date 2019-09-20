@@ -2,21 +2,20 @@
 Use settings.ini to configure the benchmark.
 '''
 import logging
-FORMAT = "[%(filename)s:%(lineno)s %(funcName)s] %(levelname)s: %(message)s"
-logging.basicConfig(level=logging.DEBUG, format=FORMAT)
-# logging.getLogger(__name__)
-
 import configparser
 import glob
 import os
-import transcribe
-import metrics
 import time
 import multiprocessing
 import codecs
+import transcribe
+import metrics
 
+from functools import partial
 
-
+FORMAT = "[%(filename)s:%(lineno)s %(funcName)s] %(levelname)s: %(message)s"
+logging.basicConfig(level=logging.DEBUG, format=FORMAT)
+# logging.getLogger(__name__)
 
 
 
@@ -68,7 +67,7 @@ def main():
         if settings.getboolean('general', 'transcribe'):
 
             # Make sure there are files to transcribe
-            if len(speech_filepaths) <= 0:
+            if not speech_filepaths:
                 raise ValueError('There is no file with the extension "%s"  in the folder "%s"',
                                  speech_file_type, data_folder)
 
@@ -88,7 +87,7 @@ def main():
                 all_transcription_skipped = True
                 for asr_system in asr_systems:
                     # logging.debug('sending call to transcription')
-                    transcription, transcription_skipped = transcribe.transcribe(speech_filepath,asr_system,settings,results_folder,save_transcription=True)
+                    transcription, transcription_skipped = transcribe.transcribe(speech_filepath, asr_system, settings, results_folder, save_transcription=True)
                     all_transcription_skipped = all_transcription_skipped and transcription_skipped
 
                 # If the speech file was converted from FLAC/MP3/Ogg to WAV, remove the WAV file
@@ -108,11 +107,7 @@ def main():
             for asr_system in asr_systems:
                 all_texts[asr_system] = {}
 
-                edit_types = ['corrects', 'deletions', 'insertions', 'substitutions', 'changes']
-                number_of_edits = {}
 
-                for edit_type in edit_types:
-                    number_of_edits[edit_type] = 0
 
 
                 # get new results folder:
@@ -126,53 +121,49 @@ def main():
 
                 start_time = time.time()
                 pool = multiprocessing.Pool()
-                args = []
-                # crappy way of passing multiple arguments
-                # since pool only accepts a single iterable.
-                # I don't have internet right now so this will have to do
-                for speech_filepath in speech_filepaths:
-                    tmp_dict = {}
-                    tmp_dict['speech_filepath'] = speech_filepath
-                    tmp_dict['results_folder'] = results_folder
-                    tmp_dict['asr_system'] = asr_system
-                    tmp_dict['settings'] = settings
-                    tmp_dict['edit_types'] = edit_types
-                    tmp_dict['number_of_edits'] = number_of_edits
-                    args.append(tmp_dict)
-                
-                
+
+                store_words = settings.getboolean('general', 'save_word_level')
                 logging.info("Starting processes.")
-                results = pool.map(get_transcript_wer, args)
+
+                results = pool.map(partial(get_transcript_wer,
+                                           word_level_save=store_words,
+                                           results_folder=results_folder,
+                                           asr_system=asr_system,
+                                           settings=settings), speech_filepaths)
                 print(results)
-                
+
                 pool.terminate()
                 pool.join()
                 with open(result_stats_file, 'a') as f:
                     for row in results:
                         try:
-                            f.write(row + '\n')
+                            f.write("%s\n" % row)
                         except TypeError:
                             logging.warning('row %s not in results', row)
                 logging.info('processed wer in %s seconds', time.time() - start_time)
 
 
-def get_transcript_wer(args):
+def get_transcript_wer(speech_filepath, results_folder, asr_system, settings, word_level_save=False):
     """
     attempt to functionalize the accuracy computation
     to allow parallel computing.
-    
+
     currently uses a brute force approach to arguments
-    change this later. 
+    change this later.
     """
-    speech_filepath = args['speech_filepath']
-    results_folder = args['results_folder']
-    asr_system = args['asr_system']
-    settings = args['settings']
-    edit_types = args['edit_types']
-    number_of_edits = args['number_of_edits']
-    
+    #results_folder = args['results_folder']
+    #asr_system = args['asr_system']
+
+
+    edit_types = ['corrects', 'deletions', 'insertions', 'substitutions', 'changes']
+    number_of_edits = {}
+
+    for edit_type in edit_types:
+        number_of_edits[edit_type] = 0
+
     filename = os.path.basename(speech_filepath)
     results_filepath = os.path.join(results_folder, filename)
+
     logging.debug('results filename %s', results_filepath)
     predicted_transcription_filepath_base = '.'.join(results_filepath.split('.')[:-1]) + '_'  + asr_system
     predicted_transcription_txt_filepath = predicted_transcription_filepath_base  + '.txt'
@@ -204,7 +195,7 @@ def get_transcript_wer(args):
     #print('gold_transcription\t: {0}'.format(gold_transcription))
 
     gold_transcript_tokens = gold_transcription.split(' ')
-    wer = metrics.wer(gold_transcript_tokens, predicted_transcription.split(' '), False)
+    wer, lines = metrics.wer(gold_transcript_tokens, predicted_transcription.split(' '), word_level_save)
     #print('wer: {0}'.format(wer))
 
     #if len(predicted_transcription) == 0: continue
@@ -213,11 +204,28 @@ def get_transcript_wer(args):
     for edit_type in edit_types:
         number_of_edits[edit_type] += wer[edit_type]
 
-
+    # store word-level transcripts
+    if word_level_save:
+        save_word_level(results_folder, filename, asr_system, lines)
     new_row = filename + ',' + wer_stats(wer, number_of_tokens_in_gold)
     logging.debug('new row for %s is %s', speech_filepath, new_row)
 
     return new_row
+
+def save_word_level(results_folder, filename, asr_system, lines):
+    """
+    write csv with word-level analysis
+    """
+    words_filepath = os.path.join(results_folder, 'words', filename)
+    words_filepath_base = '.'.join(words_filepath.split('.')[:-1]) + '_'  + asr_system
+    words_csv_filepath = words_filepath_base  + '.csv'
+
+    logging.debug('lines in %s: %d', filename, len(lines))
+
+    with open(words_csv_filepath, 'w+') as f:
+        # need to reverse, since algorithm works from end to start
+        for line in reversed(lines):
+            f.write("%s\n" % line)
 
 def load_predicted_transcription(predicted_transcription_txt_filepath, settings):
     predicted_transcription = codecs.open(predicted_transcription_txt_filepath, 'r', settings.get('general','predicted_transcription_encoding')).read().strip()
