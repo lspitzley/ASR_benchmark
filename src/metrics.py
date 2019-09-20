@@ -1,6 +1,7 @@
 import numpy
 import string
 import logging
+from num2words import num2words
 
 def normalize_text(text, lower_case=False, remove_punctuation=False, write_numbers_in_letters=True):
     '''
@@ -9,22 +10,20 @@ def normalize_text(text, lower_case=False, remove_punctuation=False, write_numbe
     if lower_case: text = text.lower()
 
     # https://stackoverflow.com/questions/265960/best-way-to-strip-punctuation-from-a-string-in-python
-    table = str.maketrans({key: None for key in string.punctuation})
+    table = str.maketrans({key: " " for key in string.punctuation})
     if remove_punctuation: text = text.translate(table)
 
     if write_numbers_in_letters:
-        text = text.replace('0',' zero ')
-        text = text.replace('1',' one ')
-        text = text.replace('2',' two ')
-        text = text.replace('3',' three ')
-        text = text.replace('4',' four ')
-        text = text.replace('5',' five ')
-        text = text.replace('6',' six ')
-        text = text.replace('7',' seven ')
-        text = text.replace('8',' eight ')
-        text = text.replace('9',' nine ')
-        # https://stackoverflow.com/questions/1546226/simple-way-to-remove-multiple-spaces-in-a-string
-        text = ' '.join(text.split())
+        
+        # adapted from: https://www.geeksforgeeks.org/python-extract-numbers-from-string/
+        text_list = text.split()
+        num_indices = [i for i in range(len(text_list)) if text_list[i].isnumeric()] 
+
+        for i in num_indices:
+            text_list[i] = num2words(text_list[i])
+
+        # reconstruct text
+        text = ' '.join(text_list)
     return text
 
 def wer2(r, h):
