@@ -10,6 +10,7 @@ import multiprocessing
 import codecs
 import transcribe
 import metrics
+import pandas as pd
 
 from functools import partial
 
@@ -17,15 +18,23 @@ FORMAT = "[%(filename)s:%(lineno)s %(funcName)s] %(levelname)s: %(message)s"
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 # logging.getLogger(__name__)
 
+#%%
+def get_settings(settings_filepath = 'settings.ini'):
+    """ load in the settings file """
+
+    settings = configparser.ConfigParser()
+
+    settings.read(settings_filepath)
+
+    return settings
 
 
+#%%
 
-def main():
+def main(settings):
 
     # Load setting file
-    settings = configparser.ConfigParser()
-    settings_filepath = 'settings.ini'
-    settings.read(settings_filepath)
+
 
     asr_systems = settings.get('general', 'asr_systems').split(',')
     data_folders = settings.get('general', 'data_folders').split(',')
@@ -54,13 +63,13 @@ def main():
             logging.debug('Detected speech file type: %s', speech_file_type)
             if detected_speech_file_type is None:
                 raise ValueError('You have set speech_file_type to be "auto" in {0}. We couldn\'t detect any speech file. Speech file extensions should be {1}.'
-                                 .format(settings_filepath, supported_speech_file_types))
+                                 .format('settings_filepath', supported_speech_file_types))
 
         if speech_file_type not in supported_speech_file_types:
             raise ValueError('You have set speech_file_type to be "%s" in %s.'
                              'This is invalid. speech_file_type should be'
                              'flac, ogg, mp3, or wav.',
-                             speech_file_type, settings_filepath)
+                             speech_file_type, 'settings_filepath')
 
         speech_filepaths = sorted(glob.glob(os.path.join(data_folder, '*.{0}'.format(speech_file_type))))
 
@@ -240,10 +249,101 @@ def wer_stats(wer, n_tokens):
     #logging.info('result row %s', new_row)
     return new_row
 
+#%%
+def rename_wer_keys(stats_dict, asr_name):
+    """
+    Rename the keys for each system so that they
+    can be added to the dataframe. 
+
+    Parameters
+    ----------
+    stats_dict : dict
+        original dictionary with standard wer names.
+    
+    asr_name : str
+        string to append to new names
+
+    Returns
+    -------
+    dictionary with renamed keys.
+
+    """
+    new_dict = {}
+    for key in stats_dict:
+        print(key)
+        new_key = '_'.join([key, asr_name])
+        new_dict[new_key] = stats_dict[key]
+
+    return new_dict
+
+#%% 
+
+def csv_eval_main(settings):
+    """ 
+    run program on csv columns and evaluate accuracy. 
+    
+    This code is pretty ugly but works for this one dataset. 
+    
+    It could be broken down into several functions and made more general.
+    
+    """
+    csv_file =  settings.get('general', 'csv_file')
+    logging.info('Reading CSV file %s', csv_file)
+    
+    transcripts_df = pd.read_csv(csv_file)
+    
+    # TODO accept column names as settings or args 
+    
+    # normalize text (replace old columns)
+    transcripts_df['gold_std'] = transcripts_df['Ground_truth'].apply(func=metrics.normalize_text, args=(True, True, True,))
+    transcripts_df['ibm_std'] = transcripts_df['Watson_ASR'].apply(func=metrics.normalize_text, args=(True, True, True,))
+    transcripts_df['goog_std'] = transcripts_df['Goog_ASR'].apply(func=metrics.normalize_text, args=(True, True, True,))
+    transcripts_df['amzn_std'] = transcripts_df['Amzn_ASR'].apply(func=metrics.normalize_text, args=(True, True, True,))
+    
+    # run metrics.wer
+    # metrics.wer(gold_transcript_tokens, predicted_transcription.split(' '), word_level_save)
+    out = transcripts_df.apply(lambda x: metrics.wer(x['gold_std'].split(' '), x['ibm_std'].split(' '), True), axis=1)
+    print(out.apply(lambda x: print(x[0])))
+    ibm_out = out.apply(lambda x: x[0].copy())
+
+    
+    # rename keys (changes_ibm, corrects_ibm, etc.)
+    ibm_keys = ibm_out.apply(lambda x: rename_wer_keys(x, 'ibm'))
+    
+    
+    # run in loop instead of one-by-one
+    asr_list = ['ibm_std', 'goog_std', 'amzn_std']
+    for asr in asr_list:
+        out = transcripts_df.apply(lambda x: metrics.wer(x['gold_std'].split(' '), x[asr].split(' '), True), axis=1)
+        print(out.apply(lambda x: print(x[0])))
+        asr_out = out.apply(lambda x: x[0].copy())
+
+        # rename keys (changes_ibm, corrects_ibm, etc.)
+        asr_keys = asr_out.apply(lambda x: rename_wer_keys(x, asr))
+        
+        # tabulate results
+        
+        new_df = asr_keys.apply(pd.Series)
+        transcripts_df = pd.concat([transcripts_df, new_df], axis=1, sort=False)
+        
+    
+
+    
+    # save file
+    transcripts_df.to_csv('../data/wer_csv_out.csv')
+    
+    return transcripts_df
+
+#%%
+
 if __name__ == "__main__":
     start = time.time()
     logging.info('program started')
-    main()
+    settings_ini = get_settings()
+    if settings_ini.get('general', 'from_csv'):
+        transcripts_df = csv_eval_main(settings_ini)
+    else:
+        main(settings_ini)
     #cProfile.run('main()') # if you want to do some profiling
     logging.info('done. took %.6f seconds', time.time() - start)
     print('done. time in seconds: ', time.time() - start)

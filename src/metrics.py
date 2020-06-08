@@ -170,7 +170,8 @@ def wer(ref, hyp ,debug=False):
     wer_result = round( (numSub + numDel + numIns) / (float) (len(r)), 3)
     #return {'WER':wer_result, 'Cor':numCor, 'Sub':numSub, 'Ins':numIns, 'Del':numDel}
     return {'changes': numSub + numDel + numIns, 'corrects':numCor, 
-            'substitutions':numSub, 'insertions':numIns, 'deletions':numDel}, lines
+            'substitutions':numSub, 'insertions':numIns, 'deletions':numDel,
+            'wer_result': wer_result}, lines
 
 
 if __name__ == "__main__":

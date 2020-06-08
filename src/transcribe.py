@@ -135,7 +135,7 @@ def transcribe(speech_filepath, asr_system, settings, results_folder, save_trans
             # for testing purposes, we're just using the default API key
             # to use another API key, use `r.recognize_google(audio, key="GOOGLE_SPEECH_RECOGNITION_API_KEY")`
             # instead of `r.recognize_google(audio)`
-            response = r.recognize_google(audio, show_all=True, language=speech_language)
+            response = sr.recognize_google(audio, show_all=True, language=speech_language)
             transcription_json = response
 
             actual_result = response

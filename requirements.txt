@@ -2,3 +2,5 @@ numpy
 oauth2client
 requests
 SpeechRecognition
+num2words
+pydub
