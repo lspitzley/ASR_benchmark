@@ -334,14 +334,52 @@ def csv_eval_main(settings):
     
     return transcripts_df
 
+
+def txt_eval_main(settings_ini):
+    """ evaluate data from txt file """
+     
+
+    # read data
+    data_folder = settings_ini.get('general', 'data_folders')
+    txt_gold = ''
+    txt_ibm = ''
+        
+            
+    with open(os.path.join(data_folder, '008SB_gold.txt'), 'r', errors="ignore", encoding='utf-8') as f:
+        txt_gold = f.read()
+        
+    with open(os.path.join(data_folder, '008SB_ibm_post.txt'), 'r', errors="ignore", encoding='utf-8') as f:
+        txt_ibm = f.read()
+
+        
+    # preprocess
+    # print(txt_gold)
+    gold_clean = metrics.normalize_text(txt_gold, True, True, True)
+    asr_clean = metrics.normalize_text(txt_ibm, True, True, True)
+    
+    
+    
+    # compute accuracy
+    
+    acc = metrics.wer(gold_clean, asr_clean)
+    
+    # show results
+
+    print('results', acc)
+    
+    
+
 #%%
 
 if __name__ == "__main__":
     start = time.time()
     logging.info('program started')
     settings_ini = get_settings()
-    if settings_ini.get('general', 'from_csv'):
+    print(settings_ini.getboolean('general', 'from_csv')==False)
+    if settings_ini.getboolean('general', 'from_csv'):
         transcripts_df = csv_eval_main(settings_ini)
+    elif settings_ini.getboolean('general', 'from_txt'):
+        transcripts_df = txt_eval_main(settings_ini)
     else:
         main(settings_ini)
     #cProfile.run('main()') # if you want to do some profiling
