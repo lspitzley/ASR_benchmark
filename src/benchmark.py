@@ -356,16 +356,16 @@ def txt_eval_main(settings_ini):
     # print(txt_gold)
     gold_clean = metrics.normalize_text(txt_gold, True, True, True)
     asr_clean = metrics.normalize_text(txt_ibm, True, True, True)
-    
+    print('gold_len', len(gold_clean.split(' ')), 'asr_len', len(asr_clean.split(' ')))    
     
     
     # compute accuracy
     
-    acc = metrics.wer(gold_clean, asr_clean)
+    acc = metrics.wer(gold_clean.split(' '), asr_clean.split(' '), debug=True)
     
     # show results
 
-    print('results', acc)
+    print('results', acc[0])
     
     
 
